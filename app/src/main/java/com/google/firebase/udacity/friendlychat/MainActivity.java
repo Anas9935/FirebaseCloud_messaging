@@ -16,6 +16,8 @@
 package com.google.firebase.udacity.friendlychat;
 
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -29,11 +31,19 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
+import com.firebase.ui.auth.AuthUI;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.ChildEventListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -54,6 +64,10 @@ public class MainActivity extends AppCompatActivity {
 
     private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mDatabaseReference;
+    private ChildEventListener mChildEventListener;
+    private FirebaseAuth mFirebaseAuth;
+    private FirebaseAuth.AuthStateListener mStateListener;
+    public static final int RC_SIGN_IN=1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,6 +90,9 @@ public class MainActivity extends AppCompatActivity {
 
         mFirebaseDatabase =FirebaseDatabase.getInstance();
         mDatabaseReference=mFirebaseDatabase.getReference().child("messages");
+        mFirebaseAuth=FirebaseAuth.getInstance();
+
+
 
         // Initialize progress bar
         mProgressBar.setVisibility(ProgressBar.INVISIBLE);
@@ -122,6 +139,28 @@ public class MainActivity extends AppCompatActivity {
                 mMessageEditText.setText("");
             }
         });
+        mStateListener=new FirebaseAuth.AuthStateListener() {
+            @Override
+            public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
+                FirebaseUser user=firebaseAuth.getCurrentUser();
+                if (user != null)  {            //if he is signed in
+                    onSignInInitialised(firebaseAuth.getCurrentUser().getDisplayName());
+
+                }
+                else{                           //not signed in
+                    onSignedOutClean();
+                    startActivityForResult(
+                            AuthUI.getInstance()
+                                    .createSignInIntentBuilder()
+                                    .setIsSmartLockEnabled(false)			//if the sign in you want to be saved temp then dont add
+                                    .setAvailableProviders(Arrays.asList(
+                                            new AuthUI.IdpConfig.GoogleBuilder().build(),
+                                            new AuthUI.IdpConfig.EmailBuilder().build()))
+                                    .build(),
+                            RC_SIGN_IN);
+                }
+            }
+        };
     }
 
     @Override
@@ -134,5 +173,67 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mFirebaseAuth.addAuthStateListener(mStateListener);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mFirebaseAuth.removeAuthStateListener(mStateListener);
+        ondetatchEventListener();
+        mMessageAdapter.clear();
+    }
+    private void onSignInInitialised(String username){
+        mUsername=username;
+        onAttachEventListener();
+    }
+    private void onSignedOutClean(){
+        mUsername=ANONYMOUS;
+        mMessageAdapter.clear();
+        ondetatchEventListener();
+    }
+    private void onAttachEventListener(){
+        if(mChildEventListener==null){
+            mChildEventListener =new ChildEventListener() {
+                @Override
+                public void onChildAdded(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
+                    FriendlyMessage friendlyMessage=dataSnapshot.getValue(FriendlyMessage.class);
+                    mMessageAdapter.add(friendlyMessage);
+
+                }
+
+                @Override
+                public void onChildChanged(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
+
+                }
+
+                @Override
+                public void onChildRemoved(@NonNull DataSnapshot dataSnapshot) {
+
+                }
+
+                @Override
+                public void onChildMoved(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
+
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError databaseError) {
+
+                }
+            };
+            mDatabaseReference.addChildEventListener(mChildEventListener);
+        }
+    }
+    private void ondetatchEventListener(){
+        if(mChildEventListener!=null){
+                mDatabaseReference.removeEventListener(mChildEventListener);
+                mChildEventListener=null;
+        }
     }
 }
